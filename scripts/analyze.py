@@ -436,22 +436,22 @@ def clean_air_medal(daily_metrics):
 
     BAD_AIR_THRESHOLD_PPM = 2000
     EXCESS_SCORE_THRESHOLD = 150
+    EXCESS_RATE = 0.3 # Admissible fraction of days above threshold
     VALID_DAY_RATE = 0.6  # Required rate of days with sufficient data quality.
 
     # Wenn alle Maximalwerte unter 2000 ppm waren, nie eine rote Ampel auftrat (d.h. der Wert lag
     # auch nicht an einem Tag über 30% der Zeit über dem Referenzwert) und weniger als 30% Gelbe-Ampel-Tagesbewertungen, wird die Frischluft-Medaille vergeben
     days_count = daily_metrics["is_valid"].count()
-    valid_days_count = daily_metrics[daily_metrics["is_valid"] == True][
-        "is_valid"
-    ].count()
+    valid_days = daily_metrics[daily_metrics["is_valid"] == True]
+    valid_days_count = valid_days["is_valid"].count()
 
     if valid_days_count / days_count < VALID_DAY_RATE:
         # There are too many samples missing for the given day, so that the metrics
         # loose their meaning.
         return None
     elif (
-        daily_metrics[
-            daily_metrics["max_co2_ppm"] >= BAD_AIR_THRESHOLD_PPM
+        valid_days[
+            valid_days["max_co2_ppm"] >= BAD_AIR_THRESHOLD_PPM
         ].max_co2_ppm.count()
         > 0
     ):
@@ -459,17 +459,17 @@ def clean_air_medal(daily_metrics):
         # entire month, the clean air medal cannot be awarded.
         return False
     elif (
-        daily_metrics[
-            daily_metrics["excess_score"] >= EXCESS_SCORE_THRESHOLD
+        valid_days[
+            valid_days["excess_score"] >= EXCESS_SCORE_THRESHOLD
         ].excess_score.count()
         > 0
     ):
         # If CO2-concentration exceeds the clean-air threshold on average by more than
         # EXCESS_SCORE_THRESHOLD, the clean air medal cannot be awarded.
         return False
-    elif daily_metrics[
-        daily_metrics["excess_score"] >= 0
-    ].excess_score.count() >= 0.3 * len(daily_metrics):
+    elif valid_days[
+        valid_days["excess_score"] >= 0
+    ].excess_score.count() >= EXCESS_RATE * len(valid_days):
         # If the CO2-concentration exceeds the clean air threshold on more than 30% of the days of the given month, the clean air medal cannot be awarded.
         return False
     else:

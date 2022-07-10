@@ -145,15 +145,22 @@ class Day_Metrics:
     Class to store summary statistics for a given day and to compute derived values.
     """
 
+    MAX_DAY_GAP_S = 3600  # Maximum accuulated gap duration for metrics to be valid
     max_co2_ppm = None
     mean_co2_ppm = None
     excess_duration_s = None
     mean_excess_co2_ppm = None
 
     def __init__(self, day, day_duration_s, gap_duration_s):
-        self.day = day
-        self.day_duration_s = day_duration_s
-        self.gap_duration_s = gap_duration_s
+        self.day = (
+            day  # Date of the day described by the present instance of the class.
+        )
+        self.day_duration_s = day_duration_s  # Duration of the day in s (for leap days)
+        self.gap_duration_s = gap_duration_s  # Total duration missing samples.
+
+    @property
+    def is_valid(self):
+        return self.gap_duration_s <= self.MAX_DAY_GAP_S
 
     @property
     def has_samples(self):
@@ -194,20 +201,21 @@ class Hour_Metrics:
 
     SECONDS_PER_HOUR = 3600
     MAX_GAP_S = 600  # For hour statistics, only one sample may be amiss.
-    is_valid = False
     max_co2_ppm = None
     mean_co2_ppm = None
     excess_duration_s = None
     mean_excess_co2_ppm = None
 
     def __init__(self, hour, gap_duration_s):
-        self.hour = hour
-        if gap_duration_s > self.MAX_GAP_S:
+        self.hour = hour  # Date-time if the hour of the present instance
+        if gap_duration_s >= self.MAX_GAP_S:
             self.gap_duration_s = self.SECONDS_PER_HOUR - 1  # To make computations safe
-            self.is_valid = False
         else:
             self.gap_duration_s = gap_duration_s
-            self.is_valid = True
+
+    @property
+    def is_valid(self):
+        return self.gap_duration_s < self.MAX_GAP_S
 
     @property
     def excess_rate(self):
@@ -302,6 +310,7 @@ def prepare_daily_metrics(samples, sampling_rate_s, concentration_threshold_ppm)
     daily_metrics_list = [
         {
             "day": m.day,
+            "is_valid": m.is_valid,
             "day_duration_s": m.day_duration_s,
             "gap_duration_s": m.gap_duration_s,
             "max_co2_ppm": m.max_co2_ppm,
@@ -380,6 +389,7 @@ def prepare_hourly_metrics(samples, sampling_rate_s, concentration_threshold_ppm
     hourly_metrics_list = [
         {
             "hour": m.hour,
+            "is_valid": m.is_valid,
             "gap_duration_s": m.gap_duration_s,
             "max_co2_ppm": m.max_co2_ppm,
             "mean_co2_ppm": m.mean_co2_ppm,
@@ -405,16 +415,7 @@ def weekday_histogram(hourly_metrics):
     Returns:
         Weekday-Dict: hourly sumary statistics. Weekdays are indexed starting at 0, with 0 = Sunday
     """
-    purged_hourly_metrics = hourly_metrics[
-        hourly_metrics["mean_co2_ppm"].isna() == False
-    ]
-    # TODO: Check for hours with too much missing data to exclude from histogram?
-    # purged_hourly_count = purged_hourly_metrics.groupby(
-    #     purged_hourly_metrics.index.hour
-    # ).count()
-    # na_hourly_metrics = hourly_metrics[hourly_metrics["mean_co2_ppm"].isna() == True]
-    # na_hourly_count = na_hourly_metrics.groupby(na_hourly_metrics.index.hour).count()
-
+    purged_hourly_metrics = hourly_metrics[hourly_metrics["is_valid"] == True]
     weekday_metrics = sliceby_weekday(purged_hourly_metrics)
     return {
         weekday: m.groupby(m.index.hour).mean()
@@ -430,16 +431,25 @@ def clean_air_medal(daily_metrics):
         daily_metrics (Pandas data frame): Data frame with daily metrics for a given month, for which
 
     Returns:
-        Boolean: If the clean-air-medal is awarded for the given month or not
+        Boolean: If the clean-air-medal is awarded for the given month or not. None for missing data.
     """
 
     BAD_AIR_THRESHOLD_PPM = 2000
     EXCESS_SCORE_THRESHOLD = 150
+    VALID_DAY_RATE = 0.6  # Required rate of days with sufficient data quality.
 
     # Wenn alle Maximalwerte unter 2000 ppm waren, nie eine rote Ampel auftrat (d.h. der Wert lag
     # auch nicht an einem Tag über 30% der Zeit über dem Referenzwert) und weniger als 30% Gelbe-Ampel-Tagesbewertungen, wird die Frischluft-Medaille vergeben
+    days_count = daily_metrics["is_valid"].count()
+    valid_days_count = daily_metrics[daily_metrics["is_valid"] == True][
+        "is_valid"
+    ].count()
 
-    if (
+    if valid_days_count / days_count < VALID_DAY_RATE:
+        # There are too many samples missing for the given day, so that the metrics
+        # loose their meaning.
+        return None
+    elif (
         daily_metrics[
             daily_metrics["max_co2_ppm"] >= BAD_AIR_THRESHOLD_PPM
         ].max_co2_ppm.count()

@@ -436,7 +436,7 @@ def clean_air_medal(daily_metrics):
 
     BAD_AIR_THRESHOLD_PPM = 2000
     EXCESS_SCORE_THRESHOLD = 150
-    EXCESS_RATE = 0.3 # Admissible fraction of days above threshold
+    EXCESS_RATE = 0.3  # Admissible fraction of days above threshold
     VALID_DAY_RATE = 0.6  # Required rate of days with sufficient data quality.
 
     # Wenn alle Maximalwerte unter 2000 ppm waren, nie eine rote Ampel auftrat (d.h. der Wert lag
@@ -522,6 +522,7 @@ def analyze_samples(sample_file_name, month):
         sampling_rate_s=600,
         concentration_threshold_ppm=1000,
     )
+    print("\nDaily metrics:")
     print(daily_metrics.head())
 
     # Pandas data frame of hourly metrics for the given month; i.e., summary statistics
@@ -532,12 +533,15 @@ def analyze_samples(sample_file_name, month):
         sampling_rate_s=600,
         concentration_threshold_ppm=1000,
     )
+    print("\nHourly metrics:")
     print(hourly_metrics.head())
 
     # Compute mean values for each day of the week (Mo, Tu, etc.) for each hour of the
     # day. The resulting histograms can be used to indicate which hours are the most
     # critical for the selected room. The indexing starts at Sunday (index 0).
-    weekday_hist = weekday_histogram(hourly_metrics)
+    wh = weekday_histogram(hourly_metrics)
+    weekday_hist = {day: h["max_co2_ppm"] for (day, h) in wh.items()}
+    print("\nWeekday histogram of maximum CO2 concentration")
     print(weekday_hist)
 
     award_clean_air_medal = clean_air_medal(daily_metrics)
